@@ -40,9 +40,11 @@ class RenderSettingsAddonOperator(bpy.types.Operator):
     def execute(self, context):
         blend_file_name = bpy.path.basename(bpy.context.blend_data.filepath)
         blend_file_name_without_extension = os.path.splitext(blend_file_name)[0]
+        episode = bpy.context.preferences.addons[__name__].preferences.episode_enum
         
-        output_folder = os.path.join("R:\\NSS2\\03_Postproduction\\04_OUTPUT\\Renders\\02_COMP\\NSS210\\mov", blend_file_name_without_extension + ".mov")
-        
+        # output_folder = os.path.join("R:\\NSS2\\03_Postproduction\\04_OUTPUT\\Renders\\02_COMP\\NSS210\\mov", blend_file_name_without_extension + ".mov")
+        output_folder = os.path.join("R:\\NSS2\\03_Postproduction\\04_OUTPUT\\Renders\\02_COMP\\NSS2" + str(episode) + "\\mov", blend_file_name_without_extension + ".mov")
+
         bpy.context.scene.render.filepath = output_folder
         bpy.context.scene.render.fps = 25
         bpy.context.scene.render.use_file_extension = False
@@ -402,6 +404,7 @@ class RENDER_PT_RenderSettingsAddonPanel(bpy.types.Panel):
         box = layout.box()
         box.label(text="Status: ", icon="INFO")
         box.label(text="Episode Number: " + episode, icon="KEYTYPE_EXTREME_VEC")
+        box.prop(bpy.context.preferences.addons[__name__].preferences, "episode_enum")
         
         layout.operator(RenderSettingsAddonOperator.bl_idname)
         layout.operator(AutoUpdateImageOperator.bl_idname, icon="FILE_REFRESH")

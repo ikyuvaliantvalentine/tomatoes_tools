@@ -1,0 +1,233 @@
+import os
+import sys
+import bpy
+from PySide2.QtWidgets import *
+from PySide2.QtCore import Qt, QEventLoop
+
+bl_info = {
+    "name": "PySide2 Asset Loader",
+    "version": (0, 0, 1),
+    "blender": (3, 0, 0),
+    "location": "View3D > Properties > PySide2 Blender",
+    "description": "LATER",       
+    "category": "3D View"}
+
+
+class Open_Mtools_Popup(bpy.types.Operator):
+    '''Open Mtools popup '''
+    bl_idname = "test.open_mtools_popup"
+    bl_label = "M Tools"
+    bl_options = {'REGISTER'}
+
+    def execute(self, context):
+        app = QApplication.instance()
+        if not app:
+            app = QApplication(sys.argv)
+        
+        self.widget = BlendFileSelector(r'E:/02_PIPELINE/NAME_PROJECTS/02_Maya/')
+        self.widget.show()
+        return {'RUNNING_MODAL'}
+
+    
+class BlendFileSelector(QWidget):
+    def __init__(self, base_directory):
+        super().__init__()
+
+        self.base_directory = base_directory
+
+        self.initUI()
+        
+    def initUI(self):
+        self.setWindowTitle("Blend File Selector")
+        self.setGeometry(100, 100, 800, 300)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint)
+
+        layout = QVBoxLayout()
+
+        # Add a base directory selection dropdown
+        category_layout = QHBoxLayout()
+
+        category_label = QLabel("Category:")
+        self.base_directory_combo = QComboBox()
+        self.base_directory_combo.currentIndexChanged.connect(self.populate_assets)
+
+        category_layout.addWidget(category_label)
+        category_layout.addWidget(self.base_directory_combo)
+
+        category_layout.setSpacing(10)
+        category_layout.setAlignment(Qt.AlignLeft)
+
+        self.base_directory_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+
+        layout.addLayout(category_layout)
+
+        # Left Column Layout
+        left_column_layout = QVBoxLayout()
+        
+        spacer_item = QSpacerItem(20, 25)
+
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText("Search...")
+        self.search_input.setFixedHeight(25)
+
+        asset_name_label = QLabel("Asset Name:")
+        asset_name_label.setAlignment(Qt.AlignLeft)
+
+        self.asset_list = QListWidget()
+        self.asset_list.itemClicked.connect(self.update_blend_files)
+
+        left_column_layout.addItem(spacer_item)
+        left_column_layout.addWidget(self.search_input)
+        left_column_layout.addWidget(asset_name_label)
+        left_column_layout.addWidget(self.asset_list)
+
+        # Right Column Layout
+        right_column_layout = QVBoxLayout()
+
+        stage_groupbox = QGroupBox("Stage")
+        stage_groupbox.setAlignment(Qt.AlignLeft)
+
+        stage_layout = QHBoxLayout()
+
+        self.wip_radio = QRadioButton("Wip")
+        self.published_radio = QRadioButton("Published")
+        self.approved_radio = QRadioButton("Approved")
+
+        self.wip_radio.toggled.connect(self.update_blend_files)
+        self.published_radio.toggled.connect(self.update_blend_files)
+        self.approved_radio.toggled.connect(self.update_blend_files)
+
+        stage_layout.addWidget(self.wip_radio)
+        stage_layout.addWidget(self.published_radio)
+        stage_layout.addWidget(self.approved_radio)
+
+        stage_groupbox.setLayout(stage_layout)
+
+        blend_list_label = QLabel("Versions:")
+        blend_list_label.setAlignment(Qt.AlignLeft)
+
+        self.blend_list = QListWidget()
+
+        right_column_layout.addWidget(stage_groupbox)
+        right_column_layout.addWidget(blend_list_label)
+        right_column_layout.addWidget(self.blend_list)
+
+        # Combine Left and Right Columns in Main Layout
+        main_layout = QHBoxLayout()
+        main_layout.addLayout(left_column_layout)
+        main_layout.addLayout(right_column_layout)
+
+        layout.addLayout(category_layout)
+        layout.addLayout(main_layout)
+
+        # Add a link/append option checkbox
+        option_layout = QHBoxLayout()
+        self.link_option = QRadioButton("Link")
+        self.append_option = QRadioButton("Append")
+        option_layout.addWidget(self.link_option)
+        option_layout.addWidget(self.append_option)
+
+        # Add the "Open Blend File" button
+        self.open_button = QPushButton("Open Blend File", clicked=self.open_blend_file)
+        spacer = QSpacerItem(40, 20, QSizePolicy.Expanding, QSizePolicy.Minimum)
+        option_layout.addItem(spacer)
+        option_layout.addWidget(self.open_button)
+
+        layout.addLayout(option_layout)
+
+        self.setLayout(layout)
+
+        self.populate_base_directories()
+        self.populate_assets()
+
+    def populate_base_directories(self):
+        base_directories = os.listdir(self.base_directory)
+        self.base_directory_combo.addItems(base_directories)
+
+    def populate_assets(self):
+        selected_folder = self.base_directory_combo.currentText()
+        assets = os.listdir(os.path.join(self.base_directory, selected_folder))
+        self.asset_list.clear()
+        self.asset_list.addItems(assets)
+
+    def update_blend_files(self):
+        self.blend_list.clear()
+        selected_asset = self.asset_list.currentItem()
+        if selected_asset is not None:
+            base_dir = os.path.join(self.base_directory, self.base_directory_combo.currentText())
+            asset_path = os.path.join(base_dir, selected_asset.text())
+
+            # Determine the selected stage based on the radio buttons
+            if self.wip_radio.isChecked():
+                stage_folder = "WIP"
+            elif self.published_radio.isChecked():
+                stage_folder = "Publish"
+            elif self.approved_radio.isChecked():
+                stage_folder = "Approved"
+            else:
+                print("No stage selected.")
+                return
+
+            stage_path = os.path.join(asset_path, stage_folder)
+            if os.path.exists(stage_path):
+                # blend_files = [f for f in os.listdir(stage_path) if f.endswith(".blend")]
+                blend_files = [os.path.splitext(f)[0] for f in os.listdir(stage_path) if f.endswith(".blend")]
+                # version_numbers = [f.split('_')[-1].split('.')[0] for f in blend_files]
+                self.blend_list.addItems(blend_files)
+            else:
+                print(f"No '{stage_folder}' folder found in {asset_path}")
+    
+    def dummy_refresh(self):
+        print("Refresh Button Clicked")
+
+    def dummy_load(self):
+        print("Load Button Clicked")
+    
+    def open_blend_file(self):
+        selected_blend = self.blend_list.currentItem()
+        selected_asset = self.asset_list.currentItem()
+        if selected_blend is not None and selected_asset is not None:
+            base_dir = os.path.join(self.base_directory, self.base_directory_combo.currentText())
+            asset_path = os.path.join(base_dir, selected_asset.text())
+
+            # Determine the selected stage based on the radio buttons
+            if self.wip_radio.isChecked():
+                stage_folder = "WIP"
+            elif self.published_radio.isChecked():
+                stage_folder = "Publish"
+            elif self.approved_radio.isChecked():
+                stage_folder = "Approved"
+            else:
+                print("No stage selected.")
+                return
+
+            publish_path = os.path.join(asset_path, stage_folder, selected_blend.text() + ".blend")
+
+            print(f"Selected Asset: {selected_asset.text()}")
+            print(f"Base Directory: {base_dir}")
+            print(f"Asset Path: {asset_path}")
+            print(f"Publish Path: {publish_path}")
+
+            bpy.ops.wm.open_mainfile(filepath=publish_path)
+
+            
+class VIEW3D_PT_Global_Properties(bpy.types.Panel):
+    bl_label = "PySide2 Blender"
+    bl_category = "PySide2 Blender"
+    bl_space_type = 'VIEW_3D'
+    bl_region_type = 'UI'
+    
+    def draw(self, context):
+        layout = self.layout
+        layout.operator("test.open_mtools_popup", icon = "EXPORT")
+
+def register():
+    bpy.utils.register_class(Open_Mtools_Popup)
+    bpy.utils.register_class(VIEW3D_PT_Global_Properties)
+
+def unregister():
+    bpy.utils.unregister_class(Open_Mtools_Popup)
+    bpy.utils.unregister_class(VIEW3D_PT_Global_Properties)
+
+if __name__ == "__main__":
+    register()

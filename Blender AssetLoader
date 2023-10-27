@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 import bpy
 from PySide2.QtWidgets import *
@@ -129,9 +130,13 @@ class BlendFileSelector(QWidget):
 
         # Add the "Open Blend File" button
         self.open_button = QPushButton("Open Blend File", clicked=self.open_blend_file)
+        self.link_button = QPushButton("Link Blend File", clicked=self.link_blend_collection)
+        self.append_button = QPushButton("Append Blend", clicked=self.append_blend_collection)
         spacer = QSpacerItem(40, 20, QSizePolicy.Expanding, QSizePolicy.Minimum)
         option_layout.addItem(spacer)
         option_layout.addWidget(self.open_button)
+        option_layout.addWidget(self.link_button)
+        option_layout.addWidget(self.append_button)
 
         layout.addLayout(option_layout)
 
@@ -209,6 +214,100 @@ class BlendFileSelector(QWidget):
             print(f"Publish Path: {publish_path}")
 
             bpy.ops.wm.open_mainfile(filepath=publish_path)
+
+    def append_blend_collection(self):
+        # Get the selected blend file from the blend_list widget
+        selected_blend = self.blend_list.currentItem()
+        if selected_blend is not None:
+            blend_name = os.path.splitext(selected_blend.text())[0]
+            name_parts = blend_name.split("_")
+            get_collection_name = name_parts[1]
+            get_collection_name = re.sub(r'\W+', '', get_collection_name)
+
+            print(name_parts)
+            
+            if self.wip_radio.isChecked():
+                stage_folder = "WIP"
+            elif self.published_radio.isChecked():
+                stage_folder = "Publish"
+            elif self.approved_radio.isChecked():
+                stage_folder = "Approved"
+            else:
+                print("No stage selected.")
+                return
+
+            blend_file_path = os.path.join(
+                self.base_directory, 
+                self.base_directory_combo.currentText(), 
+                self.asset_list.currentItem().text(),
+                stage_folder,
+                f"{blend_name}.blend"
+            )
+
+            collection_name = get_collection_name
+            
+            # Link the collection with relative paths unchecked
+            with bpy.data.libraries.load(blend_file_path, link=False) as (data_from, data_to):
+                data_to.collections = [name for name in data_from.collections if name == collection_name]
+
+            # Link the appended collection to the current scene
+            for collection in data_to.collections:
+                bpy.context.scene.collection.children.link(collection)
+
+        #     # Find the linked collection
+        #     linked_collection = bpy.data.collections[collection_name]
+
+        #     # Link the linked collection to the current scene
+        #     bpy.context.scene.collection.children.link(linked_collection)
+
+        #     print(f"Linked collection '{collection_name}' from '{blend_file_path}' to current scene.")
+        # else:
+        #     print("No blend file selected.")
+            
+    def link_blend_collection(self):
+        # Get the selected blend file from the blend_list widget
+        selected_blend = self.blend_list.currentItem()
+        if selected_blend is not None:
+            blend_name = os.path.splitext(selected_blend.text())[0]
+            name_parts = blend_name.split("_")
+            get_collection_name = name_parts[1]
+            get_collection_name = re.sub(r'\W+', '', get_collection_name)
+
+            print(name_parts)
+            
+            if self.wip_radio.isChecked():
+                stage_folder = "WIP"
+            elif self.published_radio.isChecked():
+                stage_folder = "Publish"
+            elif self.approved_radio.isChecked():
+                stage_folder = "Approved"
+            else:
+                print("No stage selected.")
+                return
+
+            blend_file_path = os.path.join(
+                self.base_directory, 
+                self.base_directory_combo.currentText(), 
+                self.asset_list.currentItem().text(),
+                stage_folder,
+                f"{blend_name}.blend"
+            )
+
+            collection_name = get_collection_name
+            
+            # Link the collection with relative paths unchecked
+            with bpy.data.libraries.load(blend_file_path, link=True, relative=False) as (data_from, data_to):
+                data_to.collections = [name for name in data_from.collections if name == collection_name]
+
+            # Find the linked collection
+            linked_collection = bpy.data.collections[collection_name]
+
+            # Link the linked collection to the current scene
+            bpy.context.scene.collection.children.link(linked_collection)
+
+            print(f"Linked collection '{collection_name}' from '{blend_file_path}' to current scene.")
+        else:
+            print("No blend file selected.")
 
             
 class VIEW3D_PT_Global_Properties(bpy.types.Panel):

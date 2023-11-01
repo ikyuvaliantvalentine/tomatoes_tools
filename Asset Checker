@@ -1,0 +1,427 @@
+import bpy
+import time
+import os
+import datetime
+import getpass
+import sys
+from PySide2 import QtWidgets, QtCore
+from PySide2.QtWidgets import *
+
+from mathutils import Vector, Euler
+
+bl_info = {
+    "name": "PySide2 Asset Checker",
+    "version": (0, 0, 1),
+    "blender": (3, 0, 0),
+    "location": "View3D > Properties > PySide2 Blender",
+    "description": "LATER",       
+    "category": "3D View"}
+
+
+#The name "Check multiple UV Sets" \
+# can be obtained from the first item of the tuple at index 2 in the list self.problems_list. \
+# You can access it like this: self.problems_list[2][0].
+
+class ValidationChecker(QtWidgets.QDialog):
+    def __init__(self, parent=None):
+        super(ValidationChecker, self).__init__(parent)
+
+        self.fixed_problems_count = 0
+        self.problem_status = {}
+        self.report = []
+        
+        self.setWindowTitle("Asset Checker V02.02")
+        self.setWindowFlags(QtCore.Qt.WindowStaysOnTopHint)
+
+        # Create the main layout
+        self.main_layout = QtWidgets.QVBoxLayout(self)
+        self.setLayout(self.main_layout)
+        self.setFixedSize(500,450)
+        
+        # Create the label
+        self.label = QtWidgets.QLabel("Validation Check")
+        self.main_layout.addWidget(self.label)
+
+        # Create the table
+        self.table = QtWidgets.QTableWidget()
+        self.table.setColumnCount(2)
+        self.table.horizontalHeader().setVisible(False)
+        self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.setColumnWidth(0,350)
+        self.table.setColumnWidth(1,50)
+        self.main_layout.addWidget(self.table)
+        
+        # Add items to the table
+        self.problems_list = [("Object needs freeze transform", self.fix_object_freeze_transform, self.check_object_freeze_transform),
+                    ("Naming needs prefix GEO_", self.fix_naming_prefix, self.check_naming_prefix),
+                    ("No hidden objects in scene", self.fix_hidden_objects, self.check_hidden_objects),
+                    ("Check multiple UV Sets", self.fix_object_UVs, self.check_object_multiple_UVsets),
+                    ("Check UV Sets name are not from maya", self.fix_name_UVs, self.check_uvsets_not_from_maya),
+                    ("Check unused Materials", self.fix_unused_materials, self.check_unused_material),
+                    ("Check model has a key animation", self.fix_remove_animation_key, self.check_remove_animation_key),
+                    ("Check pivot should be in the center [0, 0, 0]", self.fix_pivot_center, self.check_pivot_center),
+                    ("Check the pivot position at the bottom for each object", self.fix_pivot_bottom, self.check_pivot_bottom),
+                    ("Check non-quad mesh", self.fix_nonquad_mesh, self.check_nonquads_mesh),
+                    ]
+
+        # Add items to the table
+        for problem in self.problems_list:
+            self.add_item(problem[0], problem[1], problem[2])
+            self.check_problem(problem[0], problem[2])
+        
+        # Create the button layout
+        self.button_layout1 = QtWidgets.QHBoxLayout()
+        self.main_layout.addLayout(self.button_layout1)
+
+        # Create the progress bar
+        self.progress_bar = QtWidgets.QProgressBar()
+        self.progress_bar.setValue(0)
+        self.progress_bar.setValue(int((self.fixed_problems_count / len(self.problem_status))*100))
+        self.button_layout1.addWidget(self.progress_bar)
+
+        # Create the "Report" button
+        self.report_button = QtWidgets.QPushButton("Report")
+        self.report_button.clicked.connect(self.generate_report)
+        self.button_layout1.addWidget(self.report_button)
+        
+        # Create the button layout
+        self.button_layout = QtWidgets.QHBoxLayout()
+        self.main_layout.addLayout(self.button_layout)
+
+        # Create the "Re-run Checks" button
+        self.rerun_checks_button = QtWidgets.QPushButton("Re-run Checks")
+        self.rerun_checks_button.clicked.connect(self.on_rerun_checks_button_clicked)
+        self.button_layout.addWidget(self.rerun_checks_button)
+
+        # Create the "Close" button
+        self.close_button = QtWidgets.QPushButton("Close")
+        self.close_button.clicked.connect(self.on_close_button_clicked)
+        self.button_layout.addWidget(self.close_button)
+    
+    def generate_report(self):
+        report_text = "Validation Report\n\n"
+        report_text += "Date: " + datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S") + "\n"
+        report_text += "User: " + getpass.getuser() + "\n"
+
+        file_path = cmds.file(q=True, sn=True)
+        if file_path == "":
+            report_text += "Maya File: [file has not been saved]\n"
+        else:
+            report_text += "Maya File: " + os.path.basename(file_path) + "\n"
+
+        report_text += "Maya Version: " + cmds.about(version=True) + "\n\n"
+
+        for problem in self.problems_list:
+            problem_title = problem[0]
+            problem_function = problem[2]
+            problem_list = problem_function()
+
+            report_text += u"\u2022 " + problem_title + "\n"
+            if problem_list:
+                for obj in problem_list:
+                    report_text += " - " + str(obj)  + "\n"
+            else:
+                report_text += "  No problem found\n"
+            report_text += "\n"
+
+        self.report.append(report_text)
+                                
+        # Create the report dialog
+        report_dialog = QtWidgets.QDialog()
+        report_dialog.setWindowTitle("Validation Window")
+        report_dialog.setWindowFlags(QtCore.Qt.WindowStaysOnTopHint)
+        report_dialog.resize(350, 300)
+        
+        # Create the main layout
+        report_layout = QtWidgets.QVBoxLayout(report_dialog)
+        
+        # Create the report text field
+        report_text_field = QtWidgets.QTextEdit()
+        report_text_field.setReadOnly(True)
+        report_text_field.setText(report_text)
+        report_layout.addWidget(report_text_field)
+        
+        # Create the "Close" button
+        close_button = QtWidgets.QPushButton("Close")
+        close_button.clicked.connect(report_dialog.accept)
+        report_layout.addWidget(close_button)
+        
+        # Show the dialog
+        report_dialog.exec_()
+
+    def add_item(self, problem, fix_function, check_function):
+        # Get the current row count
+        row = self.table.rowCount()
+
+        # Add a new row
+        self.table.insertRow(row)
+
+        # Create the problem label
+        problem_label = QtWidgets.QLabel(problem)
+        problem_label.setStyleSheet("background-color: #757575; color: white;")
+        self.table.setCellWidget(row, 0, problem_label)
+        
+        # Create the status button
+        if problem in [self.problems_list[3][0], self.problems_list[9][0]]:
+            status_button = QtWidgets.QPushButton("Manually")
+            status_button.setStyleSheet("background-color: orange; color: white;")
+            status_button.fix_function = fix_function
+            status_button.clicked.connect(self.on_status_button_clicked)
+        else:
+            status_button = QtWidgets.QPushButton("Fix")
+            status_button.setStyleSheet("background-color: red; color: white;")
+            status_button.fix_function = fix_function
+            status_button.clicked.connect(self.on_status_button_clicked)
+
+        self.table.setCellWidget(row, 1, status_button)
+        self.problem_status[problem] = status_button
+
+    def check_problem(self, problem, check_function):
+        if check_function():
+            if problem in [self.problems_list[3][0], self.problems_list[9][0]]:
+                self.problem_status[problem].setText("Manually")
+                self.problem_status[problem].setStyleSheet("background-color: orange; color: white;")
+                self.problem_status[problem].setEnabled(True)
+            else:
+                self.problem_status[problem].setText("Fix")
+                self.problem_status[problem].setStyleSheet("background-color: red; color: white;")
+                self.problem_status[problem].setEnabled(True)
+        else:
+            self.problem_status[problem].setText("Pass")
+            self.problem_status[problem].setStyleSheet("background-color: green; color: white;")
+            self.problem_status[problem].setEnabled(False)
+            self.fixed_problems_count += 1
+
+    def update_progress_bar(self):
+        total_problems = len(self.problem_status)
+        fixed_problems = self.fixed_problems_count
+        progress = (fixed_problems / total_problems) * 100
+        self.progress_bar.setValue(progress)
+
+    def on_status_button_clicked(self):
+        button = self.sender()
+        problem = None
+        for key, value in self.problem_status.items():
+            if value == button:
+                problem = key
+                break
+
+        if problem not in [self.problems_list[3][0], self.problems_list[9][0]]:
+            button.setText("Pass")
+            button.setStyleSheet("background-color: green; color: white;")
+            button.setEnabled(False)
+        button.fix_function()
+
+    def on_rerun_checks_button_clicked(self):
+        self.fixed_problems_count = 0
+        for problem_name, fix_function, check_function in self.problems_list:
+            self.check_problem(problem_name, check_function)
+        self.update_progress_bar()
+
+    def on_close_button_clicked(self):
+        self.close()
+    
+    #################################################################
+    # Fix Problem
+    #################################################################
+    def fix_object_freeze_transform(self):  
+        win = bpy.context.window_manager.windows[0]
+        area = win.screen.areas[0]
+        area_type = area.type
+        with bpy.context.temp_override(window=win, screen=win.screen, area=area):
+            for obj in bpy.context.scene.objects:
+                if obj.type == 'MESH':
+                    bpy.context.view_layer.objects.active = obj
+                    if obj.location != Vector((0,0,0)) or obj.scale != Vector((1.0,1.0,1.0)) or obj.rotation_euler != Euler((0,0,0), 'XYZ'):
+                        obj.select_set(True) 
+                        bpy.ops.object.transform_apply(location=True, rotation=True, scale=True) 
+                
+        self.fixed_problems_count += 1
+        self.update_progress_bar()
+
+    def fix_naming_prefix(self):  
+        win = bpy.context.window_manager.windows[0]
+        area = win.screen.areas[0]
+        area_type = area.type
+        with bpy.context.temp_override(window=win, screen=win.screen, area=area):
+            for obj in bpy.context.scene.objects:
+                if obj.type == "MESH":
+                    if not obj.name.startswith("GEO_"):
+                        newName = 'GEO_' + obj.name
+                        obj.name = newName
+                    
+        self.fixed_problems_count += 1
+        self.update_progress_bar()
+
+    def fix_hidden_objects(self):
+        print("Clicked")
+        
+    def fix_object_UVs(self):
+        print("Clicked")
+
+    def fix_name_UVs(self):
+        print("Clicked")
+
+    def fix_unused_materials(self):
+        print("Clicked")
+
+    def fix_remove_animation_key(self):
+        print("Clicked")
+
+    def fix_pivot_center(self):
+        print("Clicked")
+
+    def fix_pivot_bottom(self):
+        print("Clicked")
+
+    def fix_nonquad_mesh(self):
+        win = bpy.context.window_manager.windows[0]
+        area = win.screen.areas[0]
+        area_type = area.type
+        with bpy.context.temp_override(window=win, screen=win.screen, area=area):
+            # Clear the current selection
+            bpy.ops.object.select_all(action='DESELECT')
+            
+            # Get all mesh objects in the scene
+            all_mesh = [obj for obj in bpy.context.scene.objects if obj.type == 'MESH']
+
+            # Iterate through each mesh
+            for mesh in all_mesh:
+                # Initialize counter for ngon faces
+                ngon_count = 0
+                # Switch to Edit Mode
+                bpy.context.view_layer.objects.active = mesh
+                bpy.ops.object.mode_set(mode='EDIT')
+                bpy.ops.mesh.select_mode(type='FACE')
+                bpy.ops.mesh.select_face_by_sides(number=4, type='GREATER')   
+                # Iterate through each face
+                for poly in mesh.data.polygons:
+                    # Check if the face has more than 4 vertices (ngon)
+                    if len(poly.vertices) > 4:
+                        ngon_count += 1
+                        # Select ngon face
+                        poly.select = True
+                        
+                # Add mesh name and ngon counts to report if there are any ngons
+                if ngon_count > 0:
+                    mesh.select_set(True)
+                         
+        self.fixed_problems_count += 1
+        self.update_progress_bar()  
+
+    #################################################################
+    # Check Problem
+    #################################################################
+    def check_object_freeze_transform(self):
+        generate_report = []
+        for ob in bpy.context.scene.objects:
+            if ob.type == "MESH":
+                if ob.data.users > 1:
+                    continue        
+                if ob.location != Vector((0,0,0)) \
+                or ob.scale != Vector((1.0, 1.0, 1.0)) \
+                or ob.rotation_euler != Euler((0, 0, 0), 'XYZ'):     
+                    generate_report.append(ob)
+                
+        return generate_report
+
+    def check_naming_prefix(self):
+        generate_report = []
+        for ob in bpy.context.scene.objects:
+            if ob.type == "MESH":
+                if ob.data.users > 1:
+                    continue   
+                if not ob.name.startswith('GEO_'):
+                    generate_report.append(ob)
+                    
+        return generate_report
+
+    
+    def check_hidden_objects(self):
+        print("Checked")
+
+    def check_object_multiple_UVsets(self):
+        start_time = time.time()
+
+        generate_report = []
+        mesh_objects = [obj for obj in bpy.data.objects if obj.type == 'MESH']
+        for obj in mesh_objects:
+            uv_set_count = len(obj.data.uv_layers)
+            if uv_set_count > 1:
+                generate_report.append(f"{obj.name} have ({uv_set_count}) uvsets")
+
+        end_time = time.time()
+        elapsed_time = end_time - start_time
+        print(f"Check multiple UVsets: {elapsed_time:.2f} seconds")
+
+        return generate_report
+
+    def check_uvsets_not_from_maya(self):
+        print("Checked")
+
+    def check_unused_material(self):
+        print("Checked")
+
+    def check_remove_animation_key(self):
+        print("Checked")
+
+    def check_pivot_center(self):
+        print("Checked")
+
+    def check_pivot_bottom(self):
+        print("Checked")
+
+    def check_nonquads_mesh(self):
+        generate_report = []
+    
+        for ob in bpy.context.scene.objects:
+            if ob.type == "MESH":
+                if ob.data.users > 1:
+                    continue   
+                ngonCount = 0
+                for p in ob.data.polygons:
+                    count = p.loop_total
+                    if count > 4:
+                        ngonCount += 1 
+                        generate_report.append(f" {ob}: Ngon: {ngonCount}")
+        return generate_report
+
+class Open_Checker_Popup(bpy.types.Operator):
+    '''Open Mtools popup '''
+    bl_idname = "test.open_checker_popup"
+    bl_label = "Checker Tools"
+    bl_options = {'REGISTER'}
+
+    def execute(self, context):
+        app = QApplication.instance()
+        if not app:
+            app = QApplication(sys.argv)
+            
+        validation_checker = ValidationChecker()
+        validation_checker.show()    
+        return {'RUNNING_MODAL'}
+
+class VIEW3D_PT_Checler_Properties(bpy.types.Panel):
+    bl_label = "PySide2 Blender"
+    bl_category = "PySide2 Blender"
+    bl_space_type = 'VIEW_3D'
+    bl_region_type = 'UI'
+    
+    def draw(self, context):
+        layout = self.layout
+        layout.operator("test.open_checker_popup", icon = "EXPORT")
+        
+def register():
+    bpy.utils.register_class(Open_Checker_Popup)
+    bpy.utils.register_class(VIEW3D_PT_Checler_Properties)
+
+def unregister():
+    bpy.utils.unregister_class(Open_Checker_Popup)
+    bpy.utils.unregister_class(VIEW3D_PT_Checler_Properties)
+      
+if __name__ == "__main__":
+    register()
+
+
+    
+

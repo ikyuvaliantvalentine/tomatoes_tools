@@ -68,8 +68,13 @@ class BlendFileSelector(QWidget):
         spacer_item = QSpacerItem(20, 25)
 
         self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("Search...")
+        self.search_input.setPlaceholderText("Search Asset Name...")
+        self.search_input.textChanged.connect(self.search_assets)
         self.search_input.setFixedHeight(25)
+
+        # Connect both signals to populate assets and update search filter
+        self.base_directory_combo.currentIndexChanged.connect(self.populate_assets)
+        self.base_directory_combo.currentIndexChanged.connect(self.search_assets)
 
         asset_name_label = QLabel("Asset Name:")
         asset_name_label.setAlignment(Qt.AlignLeft)
@@ -123,8 +128,20 @@ class BlendFileSelector(QWidget):
 
         # Add a link/append option checkbox
         option_layout = QHBoxLayout()
+
+        self.button_group = QButtonGroup()  # Create a button group
+
+        self.open_option = QRadioButton("Open")
         self.link_option = QRadioButton("Link")
         self.append_option = QRadioButton("Append")
+
+        self.button_group.addButton(self.open_option)  # Add buttons to the group
+        self.button_group.addButton(self.link_option)
+        self.button_group.addButton(self.append_option)
+
+        self.open_option.setChecked(True)  # Set the default option to "Open"
+
+        option_layout.addWidget(self.open_option)
         option_layout.addWidget(self.link_option)
         option_layout.addWidget(self.append_option)
 
@@ -132,6 +149,11 @@ class BlendFileSelector(QWidget):
         self.open_button = QPushButton("Open Blend File", clicked=self.open_blend_file)
         self.link_button = QPushButton("Link Blend File", clicked=self.link_blend_collection)
         self.append_button = QPushButton("Append Blend", clicked=self.append_blend_collection)
+
+        self.open_button.setVisible(True)  # Initially hide the buttons
+        self.link_button.setVisible(False)
+        self.append_button.setVisible(False)
+
         spacer = QSpacerItem(40, 20, QSizePolicy.Expanding, QSizePolicy.Minimum)
         option_layout.addItem(spacer)
         option_layout.addWidget(self.open_button)
@@ -142,8 +164,18 @@ class BlendFileSelector(QWidget):
 
         self.setLayout(layout)
 
+        # Connect radio button toggled signals to functions
+        self.open_option.toggled.connect(self.update_buttons_visibility)
+        self.link_option.toggled.connect(self.update_buttons_visibility)
+        self.append_option.toggled.connect(self.update_buttons_visibility)
+
         self.populate_base_directories()
         self.populate_assets()
+
+    def update_buttons_visibility(self):
+        self.open_button.setVisible(self.open_option.isChecked())
+        self.link_button.setVisible(self.link_option.isChecked())
+        self.append_button.setVisible(self.append_option.isChecked())
 
     def populate_base_directories(self):
         base_directories = os.listdir(self.base_directory)
@@ -181,6 +213,16 @@ class BlendFileSelector(QWidget):
                 self.blend_list.addItems(blend_files)
             else:
                 print(f"No '{stage_folder}' folder found in {asset_path}")
+                
+    def search_assets(self):
+        search_text = self.search_input.text().lower()
+        items = self.asset_list.findItems("", Qt.MatchContains)
+
+        for item in items:
+            if search_text in item.text().lower():
+                item.setHidden(False)
+            else:
+                item.setHidden(True)
     
     def dummy_refresh(self):
         print("Refresh Button Clicked")
@@ -220,11 +262,12 @@ class BlendFileSelector(QWidget):
         selected_blend = self.blend_list.currentItem()
         if selected_blend is not None:
             blend_name = os.path.splitext(selected_blend.text())[0]
-            name_parts = blend_name.split("_")
-            get_collection_name = name_parts[1]
-            get_collection_name = re.sub(r'\W+', '', get_collection_name)
+            get_collection_name = re.sub(r'ALM_|_MOD|_WIP|_v\d{3}|.blend', '', blend_name)
+            # name_parts = blend_name.split("_")
+            # get_collection_name = name_parts[1]
+            # get_collection_name = re.sub(r'\W+', '', get_collection_name)
 
-            print(name_parts)
+            print(get_collection_name)
             
             if self.wip_radio.isChecked():
                 stage_folder = "WIP"
@@ -265,15 +308,22 @@ class BlendFileSelector(QWidget):
         #     print("No blend file selected.")
             
     def link_blend_collection(self):
+        
+        job_types = ['_MOD', '_RIG', '_LGT']
+        status_types = ['_WIP', '_Publish', '_Approved']
+        
         # Get the selected blend file from the blend_list widget
         selected_blend = self.blend_list.currentItem()
         if selected_blend is not None:
             blend_name = os.path.splitext(selected_blend.text())[0]
-            name_parts = blend_name.split("_")
-            get_collection_name = name_parts[1]
-            get_collection_name = re.sub(r'\W+', '', get_collection_name)
+            
+            # Construct the regular expression pattern dynamically
+            job_pattern  = '|'.join(job_types) 
+            status_pattern = '|'.join(status_types) 
+            
+            get_collection_name = re.sub(r'ALM_|' + job_pattern + r'|' + status_pattern + r'|_v\d{3}|.blend', '', blend_name)
 
-            print(name_parts)
+            print(get_collection_name)
             
             if self.wip_radio.isChecked():
                 stage_folder = "WIP"

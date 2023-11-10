@@ -39,6 +39,10 @@ class BlendFileSelector(QWidget):
         self.initUI()
         
     def initUI(self):
+
+        # Set the background color
+        self.setStyleSheet("background-color: #494949;")
+
         self.setWindowTitle("Blend File Selector")
         self.setGeometry(100, 100, 800, 300)
         self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint)
@@ -49,7 +53,10 @@ class BlendFileSelector(QWidget):
         category_layout = QHBoxLayout()
 
         category_label = QLabel("Category:")
+        category_label.setStyleSheet("color: white;")
+
         self.base_directory_combo = QComboBox()
+        self.base_directory_combo.setStyleSheet("color: white;")
         self.base_directory_combo.currentIndexChanged.connect(self.populate_assets)
 
         category_layout.addWidget(category_label)
@@ -69,6 +76,7 @@ class BlendFileSelector(QWidget):
 
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("Search Asset Name...")
+        self.search_input.setStyleSheet("color: white;")
         self.search_input.textChanged.connect(self.search_assets)
         self.search_input.setFixedHeight(25)
 
@@ -77,9 +85,21 @@ class BlendFileSelector(QWidget):
         self.base_directory_combo.currentIndexChanged.connect(self.search_assets)
 
         asset_name_label = QLabel("Asset Name:")
+        asset_name_label.setStyleSheet("color: white;")
         asset_name_label.setAlignment(Qt.AlignLeft)
 
         self.asset_list = QListWidget()
+
+        self.asset_list.setStyleSheet('''
+            QWidget {
+                background-color: #2b2b2b;
+                color: white;
+            }
+            QListWidget::item:selected {
+                background: rgb(128,128,255);
+            }
+        ''')
+
         self.asset_list.itemClicked.connect(self.update_blend_files)
 
         left_column_layout.addItem(spacer_item)
@@ -91,28 +111,42 @@ class BlendFileSelector(QWidget):
         right_column_layout = QVBoxLayout()
 
         stage_groupbox = QGroupBox("Stage")
+        stage_groupbox.setStyleSheet("color: white;")
         stage_groupbox.setAlignment(Qt.AlignLeft)
 
         stage_layout = QHBoxLayout()
 
         self.wip_radio = QRadioButton("Wip")
+        self.wip_radio.setStyleSheet("color: white;")
         self.published_radio = QRadioButton("Published")
-        self.approved_radio = QRadioButton("Approved")
+        self.published_radio.setStyleSheet("color: white;")
+        # self.approved_radio = QRadioButton("Approved")
 
         self.wip_radio.toggled.connect(self.update_blend_files)
         self.published_radio.toggled.connect(self.update_blend_files)
-        self.approved_radio.toggled.connect(self.update_blend_files)
+        # self.approved_radio.toggled.connect(self.update_blend_files)
 
         stage_layout.addWidget(self.wip_radio)
         stage_layout.addWidget(self.published_radio)
-        stage_layout.addWidget(self.approved_radio)
+        # stage_layout.addWidget(self.approved_radio)
 
         stage_groupbox.setLayout(stage_layout)
 
         blend_list_label = QLabel("Versions:")
+        blend_list_label.setStyleSheet("color: white;")
         blend_list_label.setAlignment(Qt.AlignLeft)
 
         self.blend_list = QListWidget()
+        
+        self.blend_list.setStyleSheet('''
+            QWidget {
+                background-color: #2b2b2b;
+                color: white;
+            }
+            QListWidget::item:selected {
+                background: rgb(128,128,255);
+            }
+        ''')
 
         right_column_layout.addWidget(stage_groupbox)
         right_column_layout.addWidget(blend_list_label)
@@ -135,6 +169,10 @@ class BlendFileSelector(QWidget):
         self.link_option = QRadioButton("Link")
         self.append_option = QRadioButton("Append")
 
+        self.open_option.setStyleSheet("color: white;")
+        self.link_option.setStyleSheet("color: white;")
+        self.append_option.setStyleSheet("color: white;")
+
         self.button_group.addButton(self.open_option)  # Add buttons to the group
         self.button_group.addButton(self.link_option)
         self.button_group.addButton(self.append_option)
@@ -149,6 +187,10 @@ class BlendFileSelector(QWidget):
         self.open_button = QPushButton("Open Blend File", clicked=self.open_blend_file)
         self.link_button = QPushButton("Link Blend File", clicked=self.link_blend_collection)
         self.append_button = QPushButton("Append Blend", clicked=self.append_blend_collection)
+
+        self.open_button.setStyleSheet("background-color: #5d5d5d; color: white;")
+        self.link_button.setStyleSheet("background-color: #5d5d5d; color: white;")
+        self.append_button.setStyleSheet("background-color: #5d5d5d; color: white;")
 
         self.open_button.setVisible(True)  # Initially hide the buttons
         self.link_button.setVisible(False)
@@ -348,12 +390,15 @@ class BlendFileSelector(QWidget):
             # Link the collection with relative paths unchecked
             with bpy.data.libraries.load(blend_file_path, link=True, relative=False) as (data_from, data_to):
                 data_to.collections = [name for name in data_from.collections if name == collection_name]
+            
+            for coll in data_to.collections:
+                bpy.context.scene.collection.children.link(coll)
 
-            # Find the linked collection
-            linked_collection = bpy.data.collections[collection_name]
+            # # Find the linked collection
+            # linked_collection = bpy.data.collections[collection_name]
 
-            # Link the linked collection to the current scene
-            bpy.context.scene.collection.children.link(linked_collection)
+            # # Link the linked collection to the current scene
+            # bpy.context.scene.collection.children.link(linked_collection)
 
             print(f"Linked collection '{collection_name}' from '{blend_file_path}' to current scene.")
         else:

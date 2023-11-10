@@ -4,10 +4,10 @@ import os
 import datetime
 import getpass
 import sys
-from PySide2 import QtWidgets, QtCore
+from PySide2 import QtWidgets, QtCore, QtGui
 from PySide2.QtWidgets import *
 
-from mathutils import Vector, Euler
+from mathutils import Vector, Euler, Matrix
 
 bl_info = {
     "name": "PySide2 Asset Checker",
@@ -16,7 +16,6 @@ bl_info = {
     "location": "View3D > Properties > PySide2 Blender",
     "description": "LATER",       
     "category": "3D View"}
-
 
 #The name "Check multiple UV Sets" \
 # can be obtained from the first item of the tuple at index 2 in the list self.problems_list. \
@@ -29,6 +28,9 @@ class ValidationChecker(QtWidgets.QDialog):
         self.fixed_problems_count = 0
         self.problem_status = {}
         self.report = []
+
+        # Set the background color
+        self.setStyleSheet("background-color: #494949;")
         
         self.setWindowTitle("Asset Checker V02.02")
         self.setWindowFlags(QtCore.Qt.WindowStaysOnTopHint)
@@ -40,15 +42,19 @@ class ValidationChecker(QtWidgets.QDialog):
         
         # Create the label
         self.label = QtWidgets.QLabel("Validation Check")
+        self.label.setStyleSheet("color: white;")
         self.main_layout.addWidget(self.label)
 
         # Create the table
         self.table = QtWidgets.QTableWidget()
         self.table.setColumnCount(2)
         self.table.horizontalHeader().setVisible(False)
+        self.table.verticalHeader().setVisible(False) 
+        self.table.verticalHeader().setStyleSheet("background-color: #5d5d5d;")
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.setColumnWidth(0,350)
         self.table.setColumnWidth(1,50)
+        self.table.setStyleSheet("background-color: #2b2b2b;")
         self.main_layout.addWidget(self.table)
         
         # Add items to the table
@@ -78,9 +84,11 @@ class ValidationChecker(QtWidgets.QDialog):
         self.progress_bar.setValue(0)
         self.progress_bar.setValue(int((self.fixed_problems_count / len(self.problem_status))*100))
         self.button_layout1.addWidget(self.progress_bar)
+        self.progress_bar.setStyleSheet("color: white;")
 
         # Create the "Report" button
         self.report_button = QtWidgets.QPushButton("Report")
+        self.report_button.setStyleSheet("background-color: #5d5d5d; color: white;")
         self.report_button.clicked.connect(self.generate_report)
         self.button_layout1.addWidget(self.report_button)
         
@@ -90,26 +98,28 @@ class ValidationChecker(QtWidgets.QDialog):
 
         # Create the "Re-run Checks" button
         self.rerun_checks_button = QtWidgets.QPushButton("Re-run Checks")
+        self.rerun_checks_button.setStyleSheet("background-color: #5d5d5d; color: white;")
         self.rerun_checks_button.clicked.connect(self.on_rerun_checks_button_clicked)
         self.button_layout.addWidget(self.rerun_checks_button)
 
         # Create the "Close" button
         self.close_button = QtWidgets.QPushButton("Close")
+        self.close_button.setStyleSheet("background-color: #5d5d5d; color: white;")
         self.close_button.clicked.connect(self.on_close_button_clicked)
         self.button_layout.addWidget(self.close_button)
-    
+
     def generate_report(self):
         report_text = "Validation Report\n\n"
         report_text += "Date: " + datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S") + "\n"
         report_text += "User: " + getpass.getuser() + "\n"
 
-        file_path = cmds.file(q=True, sn=True)
+        file_path = bpy.data.filepath
         if file_path == "":
-            report_text += "Maya File: [file has not been saved]\n"
+            report_text += "Blend File: [file has not been saved]\n"
         else:
-            report_text += "Maya File: " + os.path.basename(file_path) + "\n"
+            report_text += "Blend File: " + bpy.path.basename(file_path) + "\n"
 
-        report_text += "Maya Version: " + cmds.about(version=True) + "\n\n"
+        report_text += "Blender Version: " + bpy.app.version_string + "\n\n"
 
         for problem in self.problems_list:
             problem_title = problem[0]
@@ -125,12 +135,13 @@ class ValidationChecker(QtWidgets.QDialog):
             report_text += "\n"
 
         self.report.append(report_text)
-                                
+
         # Create the report dialog
         report_dialog = QtWidgets.QDialog()
         report_dialog.setWindowTitle("Validation Window")
         report_dialog.setWindowFlags(QtCore.Qt.WindowStaysOnTopHint)
         report_dialog.resize(350, 300)
+        report_dialog.setStyleSheet("background-color: #494949;")
         
         # Create the main layout
         report_layout = QtWidgets.QVBoxLayout(report_dialog)
@@ -140,11 +151,13 @@ class ValidationChecker(QtWidgets.QDialog):
         report_text_field.setReadOnly(True)
         report_text_field.setText(report_text)
         report_layout.addWidget(report_text_field)
+        report_text_field.setStyleSheet("background-color: #2b2b2b; color: white;")
         
         # Create the "Close" button
         close_button = QtWidgets.QPushButton("Close")
         close_button.clicked.connect(report_dialog.accept)
         report_layout.addWidget(close_button)
+        close_button.setStyleSheet("background-color: #5d5d5d; color: white;")
         
         # Show the dialog
         report_dialog.exec_()
@@ -188,7 +201,7 @@ class ValidationChecker(QtWidgets.QDialog):
                 self.problem_status[problem].setEnabled(True)
         else:
             self.problem_status[problem].setText("Pass")
-            self.problem_status[problem].setStyleSheet("background-color: green; color: white;")
+            self.problem_status[problem].setStyleSheet("background-color: #7f8000; color: white;")
             self.problem_status[problem].setEnabled(False)
             self.fixed_problems_count += 1
 
@@ -208,7 +221,7 @@ class ValidationChecker(QtWidgets.QDialog):
 
         if problem not in [self.problems_list[3][0], self.problems_list[9][0]]:
             button.setText("Pass")
-            button.setStyleSheet("background-color: green; color: white;")
+            button.setStyleSheet("background-color: #7f8000; color: white;")
             button.setEnabled(False)
         button.fix_function()
 
@@ -257,7 +270,20 @@ class ValidationChecker(QtWidgets.QDialog):
         print("Clicked")
         
     def fix_object_UVs(self):
-        print("Clicked")
+        mesh_objects = [obj for obj in bpy.data.objects if obj.type == 'MESH']
+        objects_with_multiple_uv_sets = []
+
+        for obj in mesh_objects:
+            uv_set_count = len(obj.data.uv_layers)
+            if uv_set_count > 1:
+                print("Object '{}' has multiple UV sets.".format(obj))
+                objects_with_multiple_uv_sets.append(obj)
+            else:
+                print("Object '{}' does not have multiple UV sets.".format(obj))
+        
+        bpy.ops.object.select_all(action='DESELECT')
+        for obj in objects_with_multiple_uv_sets:
+            obj.select_set(True)
 
     def fix_name_UVs(self):
         print("Clicked")
@@ -266,10 +292,37 @@ class ValidationChecker(QtWidgets.QDialog):
         print("Clicked")
 
     def fix_remove_animation_key(self):
-        print("Clicked")
+        win = bpy.context.window_manager.windows[0]
+        area = win.screen.areas[0]
+        area_type = area.type
+        with bpy.context.temp_override(window=win, screen=win.screen, area=area):
+            bpy.ops.object.select_all(action='DESELECT')
+            bpy.context.scene.frame_set(0)
+            for obj in bpy.context.scene.objects:
+                if obj.type == 'MESH':
+                    if obj.animation_data and obj.animation_data.action:
+                        obj.animation_data_clear()
+
+        self.fixed_problems_count += 1
+        self.update_progress_bar()  
 
     def fix_pivot_center(self):
-        print("Clicked")
+        win = bpy.context.window_manager.windows[0]
+        area = win.screen.areas[0]
+        area_type = area.type
+        with bpy.context.temp_override(window=win, screen=win.screen, area=area):
+            for obj in bpy.context.scene.objects:   
+                if obj.type == "MESH" and obj.location != Vector((0.0, 0.0, 0.0)):
+                    # Get the original translation
+                    translation_vector = obj.matrix_world.translation @ obj.matrix_world
+                    # Make a tm for transform
+                    transform_matrix = Matrix.Translation(translation_vector)
+                    # Make object 
+                    obj.data.transform(transform_matrix)
+                    obj.matrix_world.translation = Vector((0.0, 0.0, 0.0))
+
+        self.fixed_problems_count += 1
+        self.update_progress_bar()  
 
     def fix_pivot_bottom(self):
         print("Clicked")
@@ -321,7 +374,7 @@ class ValidationChecker(QtWidgets.QDialog):
                 if ob.location != Vector((0,0,0)) \
                 or ob.scale != Vector((1.0, 1.0, 1.0)) \
                 or ob.rotation_euler != Euler((0, 0, 0), 'XYZ'):     
-                    generate_report.append(ob)
+                    generate_report.append(ob.name)
                 
         return generate_report
 
@@ -332,7 +385,7 @@ class ValidationChecker(QtWidgets.QDialog):
                 if ob.data.users > 1:
                     continue   
                 if not ob.name.startswith('GEO_'):
-                    generate_report.append(ob)
+                    generate_report.append(ob.name)
                     
         return generate_report
 
@@ -363,10 +416,19 @@ class ValidationChecker(QtWidgets.QDialog):
         print("Checked")
 
     def check_remove_animation_key(self):
-        print("Checked")
+        generate_report = []
+        for obj in bpy.context.scene.objects:
+            if obj.type == 'MESH':
+                if obj.animation_data and obj.animation_data.action:
+                    generate_report.append(obj.name)
+        return generate_report
 
     def check_pivot_center(self):
-        print("Checked")
+        generate_report = []
+        for obj in bpy.context.scene.objects:   
+            if obj.type == "MESH" and obj.location != Vector((0.0, 0.0, 0.0)):
+                generate_report.append(obj.name)
+        return generate_report
 
     def check_pivot_bottom(self):
         print("Checked")
@@ -383,7 +445,8 @@ class ValidationChecker(QtWidgets.QDialog):
                     count = p.loop_total
                     if count > 4:
                         ngonCount += 1 
-                        generate_report.append(f" {ob}: Ngon: {ngonCount}")
+                if ngonCount > 0:  # Only append if there are ngons
+                    generate_report.append(f" {ob.name}: Ngon: {ngonCount}")
         return generate_report
 
 class Open_Checker_Popup(bpy.types.Operator):
@@ -424,3 +487,4 @@ if __name__ == "__main__":
 
 
     
+

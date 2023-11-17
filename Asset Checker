@@ -68,6 +68,8 @@ class ValidationChecker(QtWidgets.QDialog):
                     ("Check pivot should be in the center [0, 0, 0]", self.fix_pivot_center, self.check_pivot_center),
                     ("Check the pivot position at the bottom for each object", self.fix_pivot_bottom, self.check_pivot_bottom),
                     ("Check non-quad mesh", self.fix_nonquad_mesh, self.check_nonquads_mesh),
+                    ("Check tris mesh", self.fix_tris_mesh, self.check_tris_mesh),
+                    ("Check non-manifold mesh", self.fix_nonmanifold, self.check_nonmanifold),
                     ]
 
         # Add items to the table
@@ -175,7 +177,7 @@ class ValidationChecker(QtWidgets.QDialog):
         self.table.setCellWidget(row, 0, problem_label)
         
         # Create the status button
-        if problem in [self.problems_list[3][0], self.problems_list[9][0]]:
+        if problem in [self.problems_list[3][0], self.problems_list[9][0], self.problems_list[10][0], self.problems_list[11][0]]:
             status_button = QtWidgets.QPushButton("Manually")
             status_button.setStyleSheet("background-color: orange; color: white;")
             status_button.fix_function = fix_function
@@ -191,7 +193,7 @@ class ValidationChecker(QtWidgets.QDialog):
 
     def check_problem(self, problem, check_function):
         if check_function():
-            if problem in [self.problems_list[3][0], self.problems_list[9][0]]:
+            if problem in [self.problems_list[3][0], self.problems_list[9][0], self.problems_list[10][0], self.problems_list[11][0]]:
                 self.problem_status[problem].setText("Manually")
                 self.problem_status[problem].setStyleSheet("background-color: orange; color: white;")
                 self.problem_status[problem].setEnabled(True)
@@ -219,7 +221,7 @@ class ValidationChecker(QtWidgets.QDialog):
                 problem = key
                 break
 
-        if problem not in [self.problems_list[3][0], self.problems_list[9][0]]:
+        if problem not in [self.problems_list[3][0], self.problems_list[9][0], self.problems_list[10][0], self.problems_list[11][0]]:
             button.setText("Pass")
             button.setStyleSheet("background-color: #7f8000; color: white;")
             button.setEnabled(False)
@@ -289,7 +291,16 @@ class ValidationChecker(QtWidgets.QDialog):
         print("Clicked")
 
     def fix_unused_materials(self):
-        print("Clicked")
+        win = bpy.context.window_manager.windows[0]
+        area = win.screen.areas[0]
+        area_type = area.type
+        with bpy.context.temp_override(window=win, screen=win.screen, area=area):
+            for material in bpy.data.materials:
+                if material.users == 0:
+                    bpy.data.materials.remove(material)
+        
+        self.fixed_problems_count += 1
+        self.update_progress_bar()  
 
     def fix_remove_animation_key(self):
         win = bpy.context.window_manager.windows[0]
@@ -311,15 +322,15 @@ class ValidationChecker(QtWidgets.QDialog):
         area = win.screen.areas[0]
         area_type = area.type
         with bpy.context.temp_override(window=win, screen=win.screen, area=area):
-            for obj in bpy.context.scene.objects:   
-                if obj.type == "MESH" and obj.location != Vector((0.0, 0.0, 0.0)):
-                    # Get the original translation
-                    translation_vector = obj.matrix_world.translation @ obj.matrix_world
-                    # Make a tm for transform
-                    transform_matrix = Matrix.Translation(translation_vector)
-                    # Make object 
-                    obj.data.transform(transform_matrix)
-                    obj.matrix_world.translation = Vector((0.0, 0.0, 0.0))
+            mesh_objects = [obj for obj in bpy.context.scene.objects if obj.type == 'MESH' if obj.location != Vector((0.0, 0.0, 0.0))]
+            for obj in mesh_objects:   
+                # Get the original translation
+                translation_vector = obj.matrix_world.translation @ obj.matrix_world
+                # Make a tm for transform
+                transform_matrix = Matrix.Translation(translation_vector)
+                # Make object 
+                obj.data.transform(transform_matrix)
+                obj.matrix_world.translation = Vector((0.0, 0.0, 0.0))
 
         self.fixed_problems_count += 1
         self.update_progress_bar()  
@@ -362,6 +373,40 @@ class ValidationChecker(QtWidgets.QDialog):
         self.fixed_problems_count += 1
         self.update_progress_bar()  
 
+    def fix_tris_mesh(self):
+        win = bpy.context.window_manager.windows[0]
+        area = win.screen.areas[0]
+        area_type = area.type
+        with bpy.context.temp_override(window=win, screen=win.screen, area=area):
+            bpy.ops.object.select_all(action='DESELECT')
+            for ob in bpy.context.visible_objects:
+                if ob.type == 'MESH':
+                    bpy.context.view_layer.objects.active = ob
+                    ob.select_set(True) 
+                    bpy.ops.object.mode_set(mode='EDIT')
+                    bpy.ops.mesh.select_mode(type='FACE')
+                    bpy.ops.mesh.select_face_by_sides(number=3, type='EQUAL')
+
+        self.fixed_problems_count += 1
+        self.update_progress_bar()  
+
+    def fix_nonmanifold(self):
+        win = bpy.context.window_manager.windows[0]
+        area = win.screen.areas[0]
+        area_type = area.type
+        with bpy.context.temp_override(window=win, screen=win.screen, area=area):
+            bpy.ops.object.select_all(action='DESELECT')
+
+            all_mesh = [obj for obj in bpy.context.scene.objects if obj.type == 'MESH']
+            for ob in all_mesh:
+                bpy.context.view_layer.objects.active = ob
+                ob.select_set(True) 
+                bpy.ops.object.mode_set(mode='EDIT')
+                bpy.ops.mesh.select_non_manifold(extend=False, use_wire=False, use_boundary=True)
+                
+        self.fixed_problems_count += 1
+        self.update_progress_bar()  
+
     #################################################################
     # Check Problem
     #################################################################
@@ -386,34 +431,35 @@ class ValidationChecker(QtWidgets.QDialog):
                     continue   
                 if not ob.name.startswith('GEO_'):
                     generate_report.append(ob.name)
-                    
         return generate_report
 
     
     def check_hidden_objects(self):
-        print("Checked")
+        generate_report = []
+        hidden_objects = [obj for obj in bpy.context.scene.objects if obj.hide_get() or obj.hide_viewport ]
+        if hidden_objects:
+            generate_report.extend([obj.name for obj in hidden_objects])
+        return generate_report
+
 
     def check_object_multiple_UVsets(self):
-        start_time = time.time()
-
         generate_report = []
         mesh_objects = [obj for obj in bpy.data.objects if obj.type == 'MESH']
         for obj in mesh_objects:
             uv_set_count = len(obj.data.uv_layers)
             if uv_set_count > 1:
                 generate_report.append(f"{obj.name} have ({uv_set_count}) uvsets")
-
-        end_time = time.time()
-        elapsed_time = end_time - start_time
-        print(f"Check multiple UVsets: {elapsed_time:.2f} seconds")
-
         return generate_report
 
     def check_uvsets_not_from_maya(self):
         print("Checked")
 
     def check_unused_material(self):
-        print("Checked")
+        generate_report = []
+        for material in bpy.data.materials:
+            if material.users == 0:
+                generate_report.append('Name:  {} is not used'.format(material.name))
+        return generate_report
 
     def check_remove_animation_key(self):
         generate_report = []
@@ -425,9 +471,9 @@ class ValidationChecker(QtWidgets.QDialog):
 
     def check_pivot_center(self):
         generate_report = []
-        for obj in bpy.context.scene.objects:   
-            if obj.type == "MESH" and obj.location != Vector((0.0, 0.0, 0.0)):
-                generate_report.append(obj.name)
+        mesh_objects = [obj for obj in bpy.context.scene.objects if obj.type == 'MESH' if obj.location != Vector((0.0, 0.0, 0.0))]
+        for obj in mesh_objects:   
+            generate_report.append(obj.name)
         return generate_report
 
     def check_pivot_bottom(self):
@@ -435,18 +481,45 @@ class ValidationChecker(QtWidgets.QDialog):
 
     def check_nonquads_mesh(self):
         generate_report = []
+        mesh_objects = [obj for obj in bpy.context.scene.objects if obj.type == 'MESH']
+        for ob in mesh_objects:
+            if ob.data.users > 1:
+                continue   
+            ngonCount = 0
+            for p in ob.data.polygons:
+                count = p.loop_total
+                if count > 4:
+                    ngonCount += 1 
+            if ngonCount > 0:  # Only append if there are ngons
+                generate_report.append(f" {ob.name}: Ngon: {ngonCount}")
+        return generate_report
     
+    def check_tris_mesh(self):
+        generate_report = []
+        mesh_objects = [obj for obj in bpy.context.scene.objects if obj.type == 'MESH']
+        for ob in mesh_objects:
+            if ob.data.users > 1:
+                continue   
+            trisCount = 0
+            for p in ob.data.polygons:
+                if len(p.vertices) == 3:
+                    trisCount += 1
+            if trisCount > 0:  # Only append if there are ngons
+                generate_report.append(f" {ob.name}: Tris: {trisCount}")
+        return generate_report
+
+    def check_nonmanifold(self):
+        generate_report = []
         for ob in bpy.context.scene.objects:
             if ob.type == "MESH":
                 if ob.data.users > 1:
                     continue   
-                ngonCount = 0
+                mc = dict([(ed.key, 0) for ed in ob.data.edges])
                 for p in ob.data.polygons:
-                    count = p.loop_total
-                    if count > 4:
-                        ngonCount += 1 
-                if ngonCount > 0:  # Only append if there are ngons
-                    generate_report.append(f" {ob.name}: Ngon: {ngonCount}")
+                    for ek in p.edge_keys:
+                        mc[ek] += 1
+                        if mc[ek] > 2:
+                            generate_report.append(ek)
         return generate_report
 
 class Open_Checker_Popup(bpy.types.Operator):

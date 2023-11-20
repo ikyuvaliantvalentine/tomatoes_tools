@@ -21,6 +21,18 @@ bl_info = {
 # can be obtained from the first item of the tuple at index 2 in the list self.problems_list. \
 # You can access it like this: self.problems_list[2][0].
 
+class OverlayWidget(QWidget):
+    def __init__(self, message):
+        super(OverlayWidget, self).__init__()
+
+        layout = QVBoxLayout(self)
+        label = QLabel(message)
+        layout.addWidget(label)
+
+        ok_button = QPushButton("OK")
+        ok_button.clicked.connect(self.close)
+        layout.addWidget(ok_button)
+        
 class ValidationChecker(QtWidgets.QDialog):
     def __init__(self, parent=None):
         super(ValidationChecker, self).__init__(parent)
@@ -342,33 +354,59 @@ class ValidationChecker(QtWidgets.QDialog):
         win = bpy.context.window_manager.windows[0]
         area = win.screen.areas[0]
         area_type = area.type
-        with bpy.context.temp_override(window=win, screen=win.screen, area=area):
-            # Clear the current selection
-            bpy.ops.object.select_all(action='DESELECT')
-            
+
+        # Initialize counter for ngon faces
+        ngon_count = 0
+        objects_with_ngons = []
+        
+        with bpy.context.temp_override(window=win, screen=win.screen, area=area):         
             # Get all mesh objects in the scene
             all_mesh = [obj for obj in bpy.context.scene.objects if obj.type == 'MESH']
 
             # Iterate through each mesh
             for mesh in all_mesh:
-                # Initialize counter for ngon faces
-                ngon_count = 0
+                initial_mode = mesh.mode
                 # Switch to Edit Mode
                 bpy.context.view_layer.objects.active = mesh
+                bpy.ops.object.mode_set(mode='OBJECT') 
                 bpy.ops.object.mode_set(mode='EDIT')
-                bpy.ops.mesh.select_mode(type='FACE')
-                bpy.ops.mesh.select_face_by_sides(number=4, type='GREATER')   
+                bpy.ops.mesh.select_all(action='DESELECT')
+                bpy.ops.object.mode_set(mode='OBJECT')
+
+                found = 0
                 # Iterate through each face
                 for poly in mesh.data.polygons:
-                    # Check if the face has more than 4 vertices (ngon)
                     if len(poly.vertices) > 4:
-                        ngon_count += 1
-                        # Select ngon face
                         poly.select = True
-                        
-                # Add mesh name and ngon counts to report if there are any ngons
-                if ngon_count > 0:
-                    mesh.select_set(True)
+                        found += 1
+
+                if found > 0:
+                    ngon_count += found
+                    objects_with_ngons.append(mesh)
+
+                if initial_mode == 'OBJECT':
+                    bpy.ops.object.mode_set(mode='OBJECT')
+
+            # Enter edit mode for all objects with ngons
+            for obj in objects_with_ngons:
+                bpy.context.view_layer.objects.active = obj
+                bpy.ops.object.mode_set(mode='EDIT')
+                bpy.ops.mesh.select_mode(type='FACE')
+
+
+        msg = QtWidgets.QMessageBox()
+        msg.setWindowFlags(QtCore.Qt.WindowStaysOnTopHint)
+        msg.setWindowTitle("Info Popup")
+        msg.setIcon(QtWidgets.QMessageBox.Warning)
+        
+        if ngon_count == 0:
+            msg.setText("No ngons found in any mesh object")
+        else:
+            msg.setText(f"Total {ngon_count} ngons found in the scene.")
+        
+        msg.setStandardButtons(QtWidgets.QMessageBox.Ok)
+        msg.setStyleSheet("background-color: #5d5d5d; color: white;")
+        msg.exec_()
                          
         self.fixed_problems_count += 1
         self.update_progress_bar()  
@@ -377,15 +415,19 @@ class ValidationChecker(QtWidgets.QDialog):
         win = bpy.context.window_manager.windows[0]
         area = win.screen.areas[0]
         area_type = area.type
+
+        # Initialize counter for ngon faces
+        tris_count = 0
+
         with bpy.context.temp_override(window=win, screen=win.screen, area=area):
-            bpy.ops.object.select_all(action='DESELECT')
-            for ob in bpy.context.visible_objects:
-                if ob.type == 'MESH':
-                    bpy.context.view_layer.objects.active = ob
-                    ob.select_set(True) 
-                    bpy.ops.object.mode_set(mode='EDIT')
-                    bpy.ops.mesh.select_mode(type='FACE')
-                    bpy.ops.mesh.select_face_by_sides(number=3, type='EQUAL')
+            all_mesh = [obj for obj in bpy.context.scene.objects if obj.type == 'MESH']
+            for mesh in all_mesh:
+                bpy.context.view_layer.objects.active = mesh
+                bpy.ops.object.mode_set(mode='EDIT')
+                bpy.ops.mesh.select_all(action='DESELECT')
+                bpy.ops.mesh.select_mode(type='FACE')
+                # mesh.select_set(True) 
+                bpy.ops.mesh.select_face_by_sides(number=3, type='EQUAL')
 
         self.fixed_problems_count += 1
         self.update_progress_bar()  

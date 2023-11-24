@@ -1,4 +1,5 @@
 import bpy
+import bmesh
 import time
 import os
 import datetime
@@ -19,20 +20,7 @@ bl_info = {
 
 #The name "Check multiple UV Sets" \
 # can be obtained from the first item of the tuple at index 2 in the list self.problems_list. \
-# You can access it like this: self.problems_list[2][0].
-
-class OverlayWidget(QWidget):
-    def __init__(self, message):
-        super(OverlayWidget, self).__init__()
-
-        layout = QVBoxLayout(self)
-        label = QLabel(message)
-        layout.addWidget(label)
-
-        ok_button = QPushButton("OK")
-        ok_button.clicked.connect(self.close)
-        layout.addWidget(ok_button)
-        
+# You can access it like this: self.problems_list[2][0].   
 class ValidationChecker(QtWidgets.QDialog):
     def __init__(self, parent=None):
         super(ValidationChecker, self).__init__(parent)
@@ -82,6 +70,7 @@ class ValidationChecker(QtWidgets.QDialog):
                     ("Check non-quad mesh", self.fix_nonquad_mesh, self.check_nonquads_mesh),
                     ("Check tris mesh", self.fix_tris_mesh, self.check_tris_mesh),
                     ("Check non-manifold mesh", self.fix_nonmanifold, self.check_nonmanifold),
+                    ("Check interior faces", self.fix_interiorfaces, self.check_interiorfaces),
                     ]
 
         # Add items to the table
@@ -189,7 +178,7 @@ class ValidationChecker(QtWidgets.QDialog):
         self.table.setCellWidget(row, 0, problem_label)
         
         # Create the status button
-        if problem in [self.problems_list[3][0], self.problems_list[9][0], self.problems_list[10][0], self.problems_list[11][0]]:
+        if problem in [self.problems_list[3][0], self.problems_list[9][0], self.problems_list[10][0], self.problems_list[11][0], self.problems_list[12][0]]:
             status_button = QtWidgets.QPushButton("Manually")
             status_button.setStyleSheet("background-color: orange; color: white;")
             status_button.fix_function = fix_function
@@ -205,7 +194,7 @@ class ValidationChecker(QtWidgets.QDialog):
 
     def check_problem(self, problem, check_function):
         if check_function():
-            if problem in [self.problems_list[3][0], self.problems_list[9][0], self.problems_list[10][0], self.problems_list[11][0]]:
+            if problem in [self.problems_list[3][0], self.problems_list[9][0], self.problems_list[10][0], self.problems_list[11][0], self.problems_list[12][0]]:
                 self.problem_status[problem].setText("Manually")
                 self.problem_status[problem].setStyleSheet("background-color: orange; color: white;")
                 self.problem_status[problem].setEnabled(True)
@@ -233,7 +222,7 @@ class ValidationChecker(QtWidgets.QDialog):
                 problem = key
                 break
 
-        if problem not in [self.problems_list[3][0], self.problems_list[9][0], self.problems_list[10][0], self.problems_list[11][0]]:
+        if problem not in [self.problems_list[3][0], self.problems_list[9][0], self.problems_list[10][0], self.problems_list[11][0], self.problems_list[12][0]]:
             button.setText("Pass")
             button.setStyleSheet("background-color: #7f8000; color: white;")
             button.setEnabled(False)
@@ -281,7 +270,13 @@ class ValidationChecker(QtWidgets.QDialog):
         self.update_progress_bar()
 
     def fix_hidden_objects(self):
-        print("Clicked")
+        for all in bpy.data.objects:
+            all.hide_set(False)
+            all.hide_viewport = False
+
+        self.fixed_problems_count += 1
+        self.update_progress_bar()
+    
         
     def fix_object_UVs(self):
         mesh_objects = [obj for obj in bpy.data.objects if obj.type == 'MESH']
@@ -418,16 +413,51 @@ class ValidationChecker(QtWidgets.QDialog):
 
         # Initialize counter for ngon faces
         tris_count = 0
+        objects_with_tris = []
 
         with bpy.context.temp_override(window=win, screen=win.screen, area=area):
             all_mesh = [obj for obj in bpy.context.scene.objects if obj.type == 'MESH']
             for mesh in all_mesh:
+                initial_mode = mesh.mode
                 bpy.context.view_layer.objects.active = mesh
+                bpy.ops.object.mode_set(mode='OBJECT') 
                 bpy.ops.object.mode_set(mode='EDIT')
                 bpy.ops.mesh.select_all(action='DESELECT')
+                bpy.ops.object.mode_set(mode='OBJECT')
+
+                found = 0
+                # Iterate through each face
+                for poly in mesh.data.polygons:
+                    if len(poly.vertices) == 3:
+                        poly.select = True
+                        found += 1
+
+                if found > 0:
+                    tris_count += found
+                    objects_with_tris.append(mesh)
+
+                if initial_mode == 'OBJECT':
+                    bpy.ops.object.mode_set(mode='OBJECT')
+
+            # Enter edit mode for all objects with ngons
+            for obj in objects_with_tris:
+                bpy.context.view_layer.objects.active = obj
+                bpy.ops.object.mode_set(mode='EDIT')
                 bpy.ops.mesh.select_mode(type='FACE')
-                # mesh.select_set(True) 
-                bpy.ops.mesh.select_face_by_sides(number=3, type='EQUAL')
+
+        msg = QtWidgets.QMessageBox()
+        msg.setWindowFlags(QtCore.Qt.WindowStaysOnTopHint)
+        msg.setWindowTitle("Info Popup")
+        msg.setIcon(QtWidgets.QMessageBox.Warning)
+        
+        if tris_count == 0:
+            msg.setText("No tris found in any mesh object")
+        else:
+            msg.setText(f"Total {tris_count} tris found in the scene.")
+        
+        msg.setStandardButtons(QtWidgets.QMessageBox.Ok)
+        msg.setStyleSheet("background-color: #5d5d5d; color: white;")
+        msg.exec_()
 
         self.fixed_problems_count += 1
         self.update_progress_bar()  
@@ -436,18 +466,151 @@ class ValidationChecker(QtWidgets.QDialog):
         win = bpy.context.window_manager.windows[0]
         area = win.screen.areas[0]
         area_type = area.type
-        with bpy.context.temp_override(window=win, screen=win.screen, area=area):
-            bpy.ops.object.select_all(action='DESELECT')
 
+        # Initialize counter for ngon faces
+        nonmanifold_count = 0
+        objects_with_nonmanifold  = []
+
+        with bpy.context.temp_override(window=win, screen=win.screen, area=area):
             all_mesh = [obj for obj in bpy.context.scene.objects if obj.type == 'MESH']
-            for ob in all_mesh:
-                bpy.context.view_layer.objects.active = ob
-                ob.select_set(True) 
+            for mesh in all_mesh:
+                bpy.context.view_layer.objects.active = mesh
+                bpy.ops.object.mode_set(mode='OBJECT') 
                 bpy.ops.object.mode_set(mode='EDIT')
-                bpy.ops.mesh.select_non_manifold(extend=False, use_wire=False, use_boundary=True)
+                bpy.ops.mesh.select_mode(type='VERT')
+                bpy.ops.mesh.select_all(action='DESELECT')
+                bpy.ops.mesh.select_non_manifold(extend=False, use_boundary=False)
+
+                # Count the selected vertices
+                nonmanifold_count += sum(1 for v in mesh.data.vertices if v.select)
+
+                # If non-manifold geometry is found, store the object
+                if nonmanifold_count > 0:
+                    objects_with_nonmanifold.append(mesh)
+
+                bpy.ops.object.mode_set(mode='OBJECT')
+
+            # Enter edit mode for all objects with ngons
+            for obj in objects_with_nonmanifold:
+                bpy.context.view_layer.objects.active = obj
+                bpy.ops.object.mode_set(mode='EDIT')
+                bpy.ops.mesh.select_mode(type='VERT')
+
+        msg = QtWidgets.QMessageBox()
+        msg.setWindowFlags(QtCore.Qt.WindowStaysOnTopHint)
+        msg.setWindowTitle("Info Popup")
+        msg.setIcon(QtWidgets.QMessageBox.Warning)
+
+        if nonmanifold_count == 0:
+            msg.setText("No non-manifold geometry found.")
+        else:
+            msg.setText(f"{nonmanifold_count} non-manifold edges found.")
+
+        msg.setStandardButtons(QtWidgets.QMessageBox.Ok)
+        msg.setStyleSheet("background-color: #5d5d5d; color: white;")
+        msg.exec_()
                 
         self.fixed_problems_count += 1
         self.update_progress_bar()  
+
+    def fix_interiorfaces(self):
+        win = bpy.context.window_manager.windows[0]
+        area = win.screen.areas[0]
+        area_type = area.type
+
+        # Initialize counter for ngon faces
+        interiorfaces_count = 0
+        objects_with_interiorfaces  = []
+
+        with bpy.context.temp_override(window=win, screen=win.screen, area=area):
+            all_mesh = [obj for obj in bpy.context.scene.objects if obj.type == 'MESH']
+            for mesh in all_mesh:
+                initial_mode = mesh.mode
+                bpy.context.view_layer.objects.active = mesh
+                bpy.ops.object.mode_set(mode='OBJECT') 
+                bpy.ops.object.mode_set(mode='EDIT')
+                bpy.ops.mesh.select_mode(type='FACE')
+                bpy.ops.mesh.select_all(action='DESELECT')
+                bpy.ops.mesh.select_interior_faces()
+
+                # Count the selected vertices
+                interiorfaces_count += sum(1 for f in mesh.data.polygons if f.select)
+
+                # If non-manifold geometry is found, store the object
+                if interiorfaces_count > 0:
+                    objects_with_interiorfaces.append(mesh)
+
+                if initial_mode == 'OBJECT':
+                    bpy.ops.object.mode_set(mode='OBJECT')
+
+            # Enter edit mode for all objects with ngons
+            for obj in objects_with_interiorfaces:
+                bpy.context.view_layer.objects.active = obj
+                bpy.ops.object.mode_set(mode='EDIT')
+                bpy.ops.mesh.select_mode(type='FACE')
+
+        msg = QtWidgets.QMessageBox()
+        msg.setWindowFlags(QtCore.Qt.WindowStaysOnTopHint)
+        msg.setWindowTitle("Info Popup")
+        msg.setIcon(QtWidgets.QMessageBox.Warning)
+
+        if interiorfaces_count == 0:
+            msg.setText("No interior faces found.")
+        else:
+            msg.setText(f"{interiorfaces_count} interior faces found.")
+
+        msg.setStandardButtons(QtWidgets.QMessageBox.Ok)
+        msg.setStyleSheet("background-color: #5d5d5d; color: white;")
+        msg.exec_()
+                
+        self.fixed_problems_count += 1
+        self.update_progress_bar()  
+    
+    # def fix_nonmanifold(self):
+    #     win = bpy.context.window_manager.windows[0]
+    #     area = win.screen.areas[0]
+    #     area_type = area.type
+
+    #     # Initialize counter for ngon faces
+    #     nonmanifold_count = 0
+    #     objects_with_nonmanifold = []
+        
+    #     with bpy.context.temp_override(window=win, screen=win.screen, area=area):
+    #         bpy.ops.object.select_all(action='DESELECT')
+
+    #         all_mesh = [obj for obj in bpy.context.scene.objects if obj.type == 'MESH']
+    #         for mesh in all_mesh:
+                
+    #             bpy.context.view_layer.objects.active = mesh
+    #             bpy.ops.object.mode_set(mode='EDIT')
+    #             bpy.ops.mesh.select_mode(type='EDGE')
+    #             bpy.ops.mesh.select_non_manifold()
+
+    #             found = 0
+
+    #             # Count selected edges to report
+    #             count = len([e for e in mesh.data.edges if e.select])
+
+    #             if found > 0:
+    #                 nonmanifold_count += count
+    #                 objects_with_nonmanifold.append(mesh)
+                
+        # msg = QtWidgets.QMessageBox()
+        # msg.setWindowFlags(QtCore.Qt.WindowStaysOnTopHint)
+        # msg.setWindowTitle("Info Popup")
+        # msg.setIcon(QtWidgets.QMessageBox.Warning)
+
+    #     if count == 0:
+    #         msg.setText("No non-manifold geometry found.")
+    #     else:
+    #         msg.setText(f"{count} non-manifold edges found.")
+
+        # msg.setStandardButtons(QtWidgets.QMessageBox.Ok)
+        # msg.setStyleSheet("background-color: #5d5d5d; color: white;")
+        # msg.exec_()
+
+    #     self.fixed_problems_count += 1
+    #     self.update_progress_bar()  
 
     #################################################################
     # Check Problem
@@ -549,19 +712,99 @@ class ValidationChecker(QtWidgets.QDialog):
             if trisCount > 0:  # Only append if there are ngons
                 generate_report.append(f" {ob.name}: Tris: {trisCount}")
         return generate_report
+    
+    # def check_nonmanifold(self):
+    #     win = bpy.context.window_manager.windows[0]
+    #     area = win.screen.areas[0]
+    #     area_type = area.type
 
+    #     # Initialize counter for ngon faces
+    #     nonmanifold_count = 0
+    #     generate_report = []
+
+    #     with bpy.context.temp_override(window=win, screen=win.screen, area=area):
+    #         all_mesh = [obj for obj in bpy.context.scene.objects if obj.type == 'MESH']
+    #         for mesh in all_mesh:
+    #             bpy.context.view_layer.objects.active = mesh
+    #             bpy.ops.object.mode_set(mode='OBJECT') 
+    #             bpy.ops.object.mode_set(mode='EDIT')
+    #             bpy.ops.mesh.select_mode(type='VERT')
+    #             bpy.ops.mesh.select_all(action='DESELECT')
+    #             bpy.ops.mesh.select_non_manifold(extend=False, use_boundary=False)
+    #             bpy.ops.object.mode_set(mode='OBJECT')
+
+    #             # Count the selected vertices
+    #             nonmanifold_count += sum(1 for v in mesh.data.vertices if v.select)
+
+    #             # If non-manifold geometry is found, store the object
+    #             if nonmanifold_count > 0:
+    #                 generate_report.append(f" '{mesh.name}' contains {nonmanifold_count} non-manifold vertices")
+    #     return generate_report
+    
     def check_nonmanifold(self):
+        win = bpy.context.window_manager.windows[0]
+        area = win.screen.areas[0]
+        area_type = area.type
+
+        # Initialize counter for nonmanifold
         generate_report = []
-        for ob in bpy.context.scene.objects:
-            if ob.type == "MESH":
-                if ob.data.users > 1:
-                    continue   
-                mc = dict([(ed.key, 0) for ed in ob.data.edges])
-                for p in ob.data.polygons:
-                    for ek in p.edge_keys:
-                        mc[ek] += 1
-                        if mc[ek] > 2:
-                            generate_report.append(ek)
+
+        with bpy.context.temp_override(window=win, screen=win.screen, area=area):
+            all_mesh = [obj for obj in bpy.context.scene.objects if obj.type == 'MESH']
+            for mesh in all_mesh:
+                bpy.context.view_layer.objects.active = mesh
+                m = bmesh.new()
+                bpy.ops.object.mode_set(mode='EDIT')
+                bpy.ops.mesh.select_mode(type='VERT')
+                bpy.ops.mesh.select_non_manifold(extend=False, use_boundary=False)
+                bpy.ops.object.mode_set(mode='OBJECT')
+                bpy.ops.object.mode_set(mode='EDIT')
+                m.from_mesh(mesh.data)
+                m.verts.ensure_lookup_table()
+
+                vlist=[]
+                for v in m.verts:
+                    if v.select:
+                        vlist.append(v.index)
+
+                if vlist:
+                    generate_report.append(f" '{mesh.name}' has non-manifold geometry.")
+
+                m.free()
+                bpy.ops.object.mode_set(mode='OBJECT')
+                # bpy.ops.mesh.select_mode(type='VERT')
+
+        return generate_report
+    
+    def check_interiorfaces(self):
+        win = bpy.context.window_manager.windows[0]
+        area = win.screen.areas[0]
+        area_type = area.type
+
+        # Initialize counter for ngon faces
+        interiorfaces_count = 0
+        generate_report = []
+
+        with bpy.context.temp_override(window=win, screen=win.screen, area=area):
+            all_mesh = [obj for obj in bpy.context.scene.objects if obj.type == 'MESH']
+            for mesh in all_mesh:
+                bpy.context.view_layer.objects.active = mesh
+                bpy.ops.object.mode_set(mode='OBJECT') 
+                bpy.ops.object.mode_set(mode='EDIT')
+                bpy.ops.mesh.select_mode(type='FACE')
+                bpy.ops.mesh.select_all(action='DESELECT')
+                bpy.ops.mesh.select_interior_faces()
+
+                # Count the selected vertices
+                interiorfaces_count += sum(1 for f in mesh.data.polygons if f.select)
+
+                # If non-manifold geometry is found, store the object
+                if interiorfaces_count > 0:
+                    generate_report.append(f" '{mesh.name}' contains {interiorfaces_count} interior faces")
+
+                bpy.ops.mesh.select_mode(type='VERT')
+                bpy.ops.object.mode_set(mode='OBJECT')
+
         return generate_report
 
 class Open_Checker_Popup(bpy.types.Operator):

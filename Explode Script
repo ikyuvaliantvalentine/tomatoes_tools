@@ -36,20 +36,8 @@ def get_size(mesh):
     max_x = max(v[0] for v in bounding_box)
     return max_x - min_x
 
-# def move_lp(meshes_lp, fixed_dist):
-#     tranX = 0
-#     for i, mesh in enumerate(meshes_lp):
-#         current_mesh_size = get_size(mesh)
-#         if i != 0:
-#             mesh.location.x = tranX + current_mesh_size / 2 + fixed_dist
-#         else:
-#             mesh.location.x = tranX + current_mesh_size / 2
-
-#         tranX = mesh.location.x + current_mesh_size / 2
-
 def move_lp(meshes_lp, fixed_dist):
     tranX = 0
-
     for mesh in meshes_lp:
         current_mesh_size = get_size(mesh)
         if mesh != meshes_lp[0]:
@@ -62,9 +50,11 @@ def filter_meshes(meshes, suffixLP, suffixHP):
     return meshes_lp, meshes_hp
 
 def reset_pivots(meshes):
+    bpy.ops.object.select_all(action='DESELECT')
     for mesh in meshes:
-        bpy.context.view_layer.objects.active = mesh
-        bpy.ops.object.origin_set(type='ORIGIN_CENTER_OF_MASS')
+        mesh.select_set(True)
+    bpy.ops.object.origin_set(type='ORIGIN_CENTER_OF_MASS', center='BOUNDS')
+    bpy.ops.object.select_all(action='DESELECT')
 
 def set_keyframes(meshes, frame):
     for mesh in meshes:
@@ -75,13 +65,13 @@ def find_matchmate(meshes_lp, meshes_hp):
     suffixLP = scene.txt_suffixLP
     suffixHP = scene.txt_suffixHP
 
+    mesh_dict = {mesh_lp.name.removesuffix(suffixLP): mesh_lp for mesh_lp in meshes_lp}
+
     for mesh_hp in meshes_hp:
         name_hp = mesh_hp.name.removesuffix(suffixHP)
-        for mesh_lp in meshes_lp:
-            name_lp = mesh_lp.name.removesuffix(suffixLP)
-            if name_lp == name_hp:
-                mesh_hp.location.x = mesh_lp.location.x
-                break
+        if name_hp in mesh_dict:
+            mesh_lp = mesh_dict[name_hp]
+            mesh_hp.location.x = mesh_lp.location.x
 
 class ExplodeMeshesOperator(bpy.types.Operator):
     bl_idname = "object.explode_meshes"
